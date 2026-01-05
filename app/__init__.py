@@ -1,0 +1,1 @@
+# Rapid Detector - Fast Object Detection Configuration System

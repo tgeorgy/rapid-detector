@@ -1,0 +1,32 @@
+[project]
+name = "rapid-detector"
+version = "0.1.0"
+description = "Fast object detection configuration system using foundation models with visual examples"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch",
+    "torchvision", 
+    "pillow",
+    "numpy",
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+    "pydantic",
+    "aiofiles",
+    "jinja2",
+    "sam3[notebooks] @ git+https://github.com/facebookresearch/sam3.git"
+]
+
+[project.scripts]
+rapid-detector = "app.start_services:main"
+
+[project.optional-dependencies]
+dev = ["pytest", "black", "flake8"]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["rapid_detector*"]

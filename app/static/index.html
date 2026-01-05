@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Object Detection Configuration System</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <h1>Detection API setup</h1>
+        <p>Create custom object detectors by providing examples - no training required!</p>
+    </header>
+
+    <main class="container">
+        <!-- LEFT PANEL: Configuration & Controls -->
+        <aside class="left-panel">
+            <h2>Images & Configuration</h2>
+            
+            <section class="upload-section">
+                <label for="image-upload" class="upload-label">
+                    <div class="upload-area">
+                        <span>Upload Images</span>
+                        <small>Click or drag images here (JPG, PNG)</small>
+                    </div>
+                </label>
+                <input type="file" id="image-upload" multiple accept="image/*" hidden>
+            </section>
+
+            <section class="gallery-section">
+                <h3>Select Image for Annotation</h3>
+                <div id="image-gallery" class="image-gallery">
+                    <!-- Images will be added here dynamically -->
+                </div>
+            </section>
+
+            <section class="config-section">
+                <div class="detector-management">
+                    <label for="detector-select">Select Object Class</label>
+                    <div class="detector-controls">
+                        <select id="detector-select" class="detector-dropdown">
+                            <option value="">-- Select or create detector --</option>
+                        </select>
+                        <div class="detector-buttons">
+                            <button id="new-detector-btn" class="btn btn-new" title="Create new detector">➕</button>
+                            <button id="delete-detector-btn" class="btn btn-delete" title="Delete selected detector" disabled>🗑️</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Hidden input for creating new detector -->
+                    <div id="new-detector-input" class="new-detector-input" style="display: none;">
+                        <input type="text" id="new-class-name" placeholder="Enter new class name (e.g., 'car', 'person', 'bottle')">
+                        <div class="new-detector-buttons">
+                            <button id="confirm-new-btn" class="btn btn-confirm">✓</button>
+                            <button id="cancel-new-btn" class="btn btn-cancel">✗</button>
+                        </div>
+                    </div>
+                </div>
+                
+
+                <div class="detector-actions">
+                    <button id="save-detector-btn" class="btn btn-save">💾 Save Detector</button>
+                    <button id="show-api-btn" class="btn btn-secondary" style="display: none;">📋 Use API</button>
+                </div>
+            </section>
+        </aside>
+
+        <!-- RIGHT PANEL: Annotation & Detection -->
+        <main class="right-panel">
+
+            <div class="canvas-container">
+                <canvas id="annotation-canvas" width="800" height="600"></canvas>
+                <div id="canvas-overlay" class="canvas-overlay">
+                    <div class="canvas-placeholder">
+                        Select an image from the gallery to start annotating
+                    </div>
+                </div>
+                <label><input type="checkbox" id="show-scores" checked> Show confidence scores</label>
+            </div>
+
+            <!-- Annotation Toolbar -->
+            <div class="annotation-toolbar-container">
+                <div class="annotation-toolbar">
+                    <div class="toolbar-buttons">
+                        <button id="positive-tool" class="tool-btn active" data-type="positive">
+                            Positive
+                        </button>
+                        <button id="negative-tool" class="tool-btn" data-type="negative">
+                            Negative
+                        </button>
+                        <button id="clear-annotations" class="tool-btn clear-btn">
+                            Clear
+                        </button>
+                        <button id="submit-annotations" class="tool-btn submit-btn" disabled>
+                            Submit Annotations
+                        </button>
+                    </div>
+                    
+                    <div class="annotation-status">
+                        <div id="annotation-counter">
+                            <span id="positive-count">✅ 0</span> | <span id="negative-count">❌ 0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            <div class="examples-section">
+                <label>Object Examples</label>
+                <div id="object-examples" class="object-examples">
+                    <div class="examples-placeholder">
+                        Add examples to see object cutouts here
+                    </div>
+                </div>
+            </div>
+        </main>
+    </main>
+
+    <!-- Toast notifications container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- API Code Modal -->
+    <div id="api-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>API Usage Code</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <textarea id="api-code-modal" class="api-code-modal" readonly></textarea>
+            </div>
+            <div class="modal-footer">
+                <button id="copy-api-btn" class="btn btn-primary">📋 Copy to Clipboard</button>
+                <button id="close-modal-btn" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js?v=6"></script>
+    <script src="/static/canvas-annotations.js?v=6"></script>
+</body>
+</html>

@@ -4,8 +4,8 @@ class DetectorApp {
         this.uploadedImages = [];
         this.savedImageData = [];
         this.selectedImage = null;
-        this.currentClassName = '';
-        this.detectorName = '';
+        this.currentClassName = '';  // Human-readable class name
+        this.detectorId = '';        // Normalized detector ID for API calls
         this.apiBaseUrl = 'http://localhost:8000';
         this.examplesUpdateTimer = null;
         this.currentAnnotationMode = 'positive'; // Default to positive
@@ -127,27 +127,48 @@ class DetectorApp {
         this.updateStatus(`📸 Selected image ${index + 1}`);
         
         // Auto-run detection if we have a detector and class name
-        if (this.currentClassName && this.detectorName) {
+        if (this.currentClassName && this.detectorId) {
             this.updateStatus(`🔄 Auto-detecting on new image...`, 'info');
             setTimeout(() => this.runDetection(), 500); // Small delay to let image load
         }
     }
 
     async handleDetectorSelection(e) {
-        const selectedDetector = e.target.value;
-        this.currentClassName = selectedDetector;
-        this.detectorName = selectedDetector;
+        const selectedDetectorId = e.target.value;
+        
+        // Get the detector info to retrieve the original class name
+        if (selectedDetectorId) {
+            try {
+                const response = await fetch(`${this.apiBaseUrl}/detect/${encodeURIComponent(selectedDetectorId)}/info`);
+                if (response.ok) {
+                    const detectorInfo = await response.json();
+                    this.currentClassName = detectorInfo.class_name || selectedDetectorId;
+                    this.detectorId = selectedDetectorId;
+                } else {
+                    // Fallback if info endpoint fails
+                    this.currentClassName = selectedDetectorId;
+                    this.detectorId = selectedDetectorId;
+                }
+            } catch (error) {
+                // Fallback on error
+                this.currentClassName = selectedDetectorId;
+                this.detectorId = selectedDetectorId;
+            }
+        } else {
+            this.currentClassName = '';
+            this.detectorId = '';
+        }
         
         // Enable/disable delete button
         const deleteBtn = document.getElementById('delete-detector-btn');
-        deleteBtn.disabled = !selectedDetector;
+        deleteBtn.disabled = !selectedDetectorId;
         
         // Clear pending annotations when switching detectors
         this.clearPendingAnnotations();
         
         // Load images for the selected detector
-        if (selectedDetector) {
-            await this.loadDetectorImages(selectedDetector);
+        if (selectedDetectorId) {
+            await this.loadDetectorImages(selectedDetectorId);
             // Generate API code when selecting an existing detector
             this.generateAPICode();
         } else {
@@ -165,7 +186,7 @@ class DetectorApp {
         this.updateExamplesDisplay();
         
         // Auto-run detection if we have a detector and selected image
-        if (selectedDetector && this.selectedImage) {
+        if (selectedDetectorId && this.selectedImage) {
             this.updateStatus(`🔄 Auto-detecting on selected detector...`, 'info');
             setTimeout(() => this.runDetection(), 500);
         }
@@ -204,7 +225,6 @@ class DetectorApp {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    name: className,
                     class_name: className,
                     is_semantic: true
                 })
@@ -214,11 +234,13 @@ class DetectorApp {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
 
+            const result = await response.json();
+            
             // Reload detectors list and select the new one
             await this.loadDetectorsList();
             
             const detectorSelect = document.getElementById('detector-select');
-            detectorSelect.value = className;
+            detectorSelect.value = result.detector_id;  // Use the returned detector ID
             this.handleDetectorSelection({ target: detectorSelect });
             
             this.updateStatus(`✅ Created new detector: ${className}`, 'success');
@@ -239,17 +261,17 @@ class DetectorApp {
     }
 
     async deleteDetector() {
-        if (!this.detectorName) {
+        if (!this.detectorId) {
             this.updateStatus('❌ No detector selected', 'error');
             return;
         }
 
-        if (!confirm(`Are you sure you want to delete the detector "${this.detectorName}"? This action cannot be undone.`)) {
+        if (!confirm(`Are you sure you want to delete the detector "${this.currentClassName}"? This action cannot be undone.`)) {
             return;
         }
 
         try {
-            const response = await fetch(`${this.apiBaseUrl}/detect/${encodeURIComponent(this.detectorName)}`, {
+            const response = await fetch(`${this.apiBaseUrl}/detect/${encodeURIComponent(this.detectorId)}`, {
                 method: 'DELETE'
             });
 
@@ -263,7 +285,7 @@ class DetectorApp {
             const detectorSelect = document.getElementById('detector-select');
             detectorSelect.value = '';
             this.currentClassName = '';
-            this.detectorName = '';
+            this.detectorId = '';
             
             // Disable delete button and update displays
             document.getElementById('delete-detector-btn').disabled = true;
@@ -431,7 +453,7 @@ class DetectorApp {
             const formData = new FormData();
             formData.append('image', this.selectedImage);
 
-            const response = await fetch(`${this.apiBaseUrl}/detect/${encodeURIComponent(this.detectorName)}`, {
+            const response = await fetch(`${this.apiBaseUrl}/detect/${encodeURIComponent(this.detectorId)}`, {
                 method: 'POST',
                 body: formData
             });
@@ -497,7 +519,6 @@ class DetectorApp {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    name: this.detectorName,
                     class_name: this.currentClassName,
                     is_semantic: true
                 })
@@ -517,7 +538,7 @@ class DetectorApp {
     }
 
     async saveDetector() {
-        if (!this.detectorName) {
+        if (!this.detectorId) {
             this.updateStatus('❌ Please enter a class name first', 'error');
             return;
         }
@@ -528,7 +549,7 @@ class DetectorApp {
                 await this.saveUploadedImages();
             }
 
-            const response = await fetch(`${this.apiBaseUrl}/save_detector/${encodeURIComponent(this.detectorName)}`, {
+            const response = await fetch(`${this.apiBaseUrl}/save_detector/${encodeURIComponent(this.detectorId)}`, {
                 method: 'POST'
             });
 
@@ -550,7 +571,7 @@ class DetectorApp {
     }
 
     async saveUploadedImages() {
-        if (!this.detectorName || this.uploadedImages.length === 0) {
+        if (!this.detectorId || this.uploadedImages.length === 0) {
             return;
         }
 
@@ -560,7 +581,7 @@ class DetectorApp {
                 formData.append('images', file);
             });
 
-            const response = await fetch(`${this.apiBaseUrl}/save_uploaded_images/${encodeURIComponent(this.detectorName)}`, {
+            const response = await fetch(`${this.apiBaseUrl}/save_uploaded_images/${encodeURIComponent(this.detectorId)}`, {
                 method: 'POST',
                 body: formData
             });
@@ -662,22 +683,22 @@ class DetectorApp {
         this.updateStatus(`📸 Selected saved image ${index + 1}`);
         
         // Auto-run detection if we have a detector
-        if (this.currentClassName && this.detectorName) {
+        if (this.currentClassName && this.detectorId) {
             this.updateStatus(`🔄 Auto-detecting on saved image...`, 'info');
             setTimeout(() => this.runDetection(), 500);
         }
     }
 
     generateAPICode() {
-        if (!this.detectorName) {
+        if (!this.detectorId) {
             document.getElementById('show-api-btn').style.display = 'none';
             return;
         }
         
         this.apiCode = `import requests
 
-detector_name = "${this.detectorName}"
-api_url = f"http://localhost:8000/detect/{detector_name}"
+detector_id = "${this.detectorId}"
+api_url = f"http://localhost:8000/detect/{detector_id}"
 
 with open("test_image.jpg", "rb") as f:
     response = requests.post(api_url, files={"image": f})
@@ -733,12 +754,12 @@ for i, (box, score) in enumerate(zip(results['boxes'], results['scores'])):
     }
 
     async updateExamplesDisplay() {
-        if (!this.detectorName) {
+        if (!this.detectorId) {
             return;
         }
 
         try {
-            const response = await fetch(`${this.apiBaseUrl}/detect/${encodeURIComponent(this.detectorName)}/examples`);
+            const response = await fetch(`${this.apiBaseUrl}/detect/${encodeURIComponent(this.detectorId)}/examples`);
             
             if (!response.ok) {
                 // If detector doesn't exist yet, show placeholder
@@ -890,13 +911,29 @@ for i, (box, score) in enumerate(zip(results['boxes'], results['scores'])):
                 // Clear existing options except the first one
                 detectorSelect.innerHTML = '<option value="">-- Select or create detector --</option>';
                 
-                // Add detectors to dropdown
-                detectors.forEach(detectorName => {
-                    const option = document.createElement('option');
-                    option.value = detectorName;
-                    option.textContent = detectorName;
-                    detectorSelect.appendChild(option);
-                });
+                // Add detectors to dropdown - fetch info for each to get display names
+                for (const detectorId of detectors) {
+                    try {
+                        const infoResponse = await fetch(`${this.apiBaseUrl}/detect/${encodeURIComponent(detectorId)}/info`);
+                        let displayName = detectorId; // Fallback to ID if info fetch fails
+                        
+                        if (infoResponse.ok) {
+                            const info = await infoResponse.json();
+                            displayName = info.class_name || detectorId;
+                        }
+                        
+                        const option = document.createElement('option');
+                        option.value = detectorId;
+                        option.textContent = `${displayName} (${detectorId})`;
+                        detectorSelect.appendChild(option);
+                    } catch (error) {
+                        // Fallback for any errors
+                        const option = document.createElement('option');
+                        option.value = detectorId;
+                        option.textContent = detectorId;
+                        detectorSelect.appendChild(option);
+                    }
+                }
                 
                 // Restore selection if it still exists and trigger load
                 if (currentValue && detectors.includes(currentValue)) {

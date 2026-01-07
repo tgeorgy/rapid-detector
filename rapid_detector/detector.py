@@ -10,6 +10,7 @@ import torch
 import torch.nn.functional as F
 
 from .storage import DetectorStorage
+from .utils import normalize_detector_id, get_prompt_text
 
 
 class RapidDetector:
@@ -25,7 +26,7 @@ class RapidDetector:
         config = self.configs[name]
         prompt_state = self.encode_prompts(name, config['prompts'])
         config['prompt_state'] = prompt_state
-        config['save'] = False
+        config['saved'] = False
 
     def update_prompts(self, name: str, image: Image.Image, boxes: List[List[float]], labels: List[bool]) -> None:
         image_id = self.storage.add_image(image)
@@ -33,12 +34,15 @@ class RapidDetector:
             'boxes': boxes,
             'labels': labels,
         }
-        self.configs[name]['saved'] = False
         self._update_prompt_state(name)
 
     @torch.inference_mode
-    def encode_prompts(self, name: str, prompts: dict):
-        text_outputs = self.model.backbone.forward_text([name], device=self.processor.device)
+    def encode_prompts(self, detector_id: str, prompts: dict):
+        # Get the prompt text based on detector configuration
+        config = self.configs[detector_id]
+        prompt_text = get_prompt_text(config['class_name'], config['is_semantic_name'])
+        
+        text_outputs = self.model.backbone.forward_text([prompt_text], device=self.processor.device)
         features = text_outputs["language_features"][:, :1]
         mask = text_outputs["language_mask"][:1]
 
@@ -85,7 +89,7 @@ class RapidDetector:
             boxes = torch.tensor(prompt_data['boxes'], device=processor.device, dtype=torch.float32).view(-1, 1, 4)
             labels = torch.tensor(prompt_data['labels'], device=processor.device, dtype=torch.bool).view(-1, 1)
             boxes = normalize_bbox(box_ops.box_xyxy_to_cxcywh(boxes), img_data['original_width'], img_data['original_height'])
-        
+
             box_embeds, box_masks = geo_encoder._encode_boxes(
                 boxes=boxes,
                 boxes_mask=torch.zeros_like(labels),
@@ -94,7 +98,7 @@ class RapidDetector:
             )
             all_box_embeds.append(box_embeds)
             all_box_masks.append(box_masks)
-        
+
             box_image_ids += [img_i] * len(prompt_data['boxes'])
             token_image_ids += [img_i] * (H*W)
             img_i += 1
@@ -215,18 +219,36 @@ class RapidDetector:
         results = self.process_predictions(image.size, predictions, confidence_threshold)
         return results
 
-    def new_config(self, name: str, is_semantic_name: bool = True) -> str:
-        if name in self.configs:
-            raise ValueError(name + ' exists')
-        self.configs[name] = {
+    def new_config(self, class_name: str, is_semantic_name: bool = True) -> str:
+        """
+        Create a new detector configuration.
+        
+        Args:
+            class_name: Original user-provided class name (e.g., "Red Car", "iPhone 14")
+            is_semantic_name: Whether to use semantic text prompt or "visual" only
+            
+        Returns:
+            Detector ID (normalized name used for API calls)
+        """
+        detector_id = normalize_detector_id(class_name)
+        
+        if detector_id in self.configs:
+            raise ValueError(f'Detector with ID "{detector_id}" already exists')
+            
+        self.configs[detector_id] = {
+            'class_name': class_name,  # Original user input
+            'detector_id': detector_id,  # Normalized ID for API
             'is_semantic_name': is_semantic_name,
             'prompts': {},
             'version': 0,
             'saved': False,
             'prompt_state': None,
         }
+        
         if is_semantic_name:
-            self._update_prompt_state(name)
+            self._update_prompt_state(detector_id)
+            
+        return detector_id
 
     def load_config(self, name: str) -> bool:
         try:

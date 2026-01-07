@@ -10,6 +10,7 @@ import json
 import base64
 from typing import Optional, List
 from rapid_detector import RapidDetector
+from rapid_detector.utils import normalize_detector_id
 import os
 
 app = FastAPI(title="Rapid Detector API", version="1.0.0")
@@ -187,7 +188,8 @@ async def get_detector_info(detector_name: str):
     config = detector.configs[detector_name]
     
     info = {
-        "name": detector_name,
+        "detector_id": detector_name,
+        "class_name": config.get("class_name", detector_name),  # Fallback to detector_name for backward compatibility
         "is_semantic_name": config.get("is_semantic_name", True),
         "num_examples": len(config["prompts"]),
         "version": config["version"],
@@ -257,6 +259,12 @@ async def add_example(
     is_positive: bool = Form(True)
 ):
     """Add a visual example to a detector configuration."""
+    # Normalize class name to detector ID
+    try:
+        detector_id = normalize_detector_id(class_name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid class name: {str(e)}")
+    
     # Load image
     image_data = await image.read()
     pil_image = load_and_validate_image(image_data)
@@ -268,28 +276,27 @@ async def add_example(
         raise HTTPException(status_code=400, detail="Invalid annotations JSON")
     
     # Create or get existing config
-    detector_name = class_name
-    if not detector.config_exists(detector_name):
-        detector.new_config(detector_name, is_semantic_name=True)
+    if not detector.config_exists(detector_id):
+        detector.new_config(class_name, is_semantic_name=True)
     
     # Add visual prompts
     boxes = [[ann['xmin'], ann['ymin'], ann['xmax'], ann['ymax']] for ann in annotation_list]
     labels = [is_positive] * len(boxes)
     
-    detector.update_prompts(detector_name, pil_image, boxes, labels)
+    detector.update_prompts(detector_id, pil_image, boxes, labels)
     
     # Get total examples count
-    config = detector.configs[detector_name]
+    config = detector.configs[detector_id]
     total_examples = len(config['prompts'])
     
     return JSONResponse(content={
         "message": "Example added successfully",
         "total_examples": total_examples,
-        "detector_name": detector_name
+        "detector_id": detector_id,
+        "class_name": config['class_name']
     })
 
 class CreateDetectorRequest(BaseModel):
-    name: str
     class_name: str
     is_semantic: bool = True
 
@@ -297,10 +304,11 @@ class CreateDetectorRequest(BaseModel):
 async def create_detector(request: CreateDetectorRequest):
     """Create a new detector configuration."""
     try:
-        detector.new_config(request.name, is_semantic_name=request.is_semantic)
+        detector_id = detector.new_config(request.class_name, is_semantic_name=request.is_semantic)
         return JSONResponse(content={
             "message": "Detector created successfully",
-            "detector_name": request.name
+            "detector_id": detector_id,
+            "class_name": request.class_name
         })
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

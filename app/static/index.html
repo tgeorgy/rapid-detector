@@ -9,31 +9,12 @@
 <body>
     <header>
         <h1>Detection API setup</h1>
-        <p>Create custom object detectors by providing examples - no training required!</p>
     </header>
 
     <main class="container">
         <!-- LEFT PANEL: Configuration & Controls -->
         <aside class="left-panel">
             <h2>Images & Configuration</h2>
-            
-            <section class="upload-section">
-                <label for="image-upload" class="upload-label">
-                    <div class="upload-area">
-                        <span>Upload Images</span>
-                        <small>Click or drag images here (JPG, PNG)</small>
-                    </div>
-                </label>
-                <input type="file" id="image-upload" multiple accept="image/*" hidden>
-            </section>
-
-            <section class="gallery-section">
-                <h3>Select Image for Annotation</h3>
-                <div id="image-gallery" class="image-gallery">
-                    <!-- Images will be added here dynamically -->
-                </div>
-            </section>
-
             <section class="config-section">
                 <div class="detector-management">
                     <label for="detector-select">Select Object Class</label>
@@ -56,8 +37,26 @@
                         </div>
                     </div>
                 </div>
-                
+            </section>
 
+            <section class="upload-section">
+                <label for="image-upload" class="upload-label">
+                    <div class="upload-area">
+                        <span>Upload Images</span>
+                        <small>Click or drag images here (JPG, PNG)</small>
+                    </div>
+                </label>
+                <input type="file" id="image-upload" multiple accept="image/*" hidden>
+            </section>
+
+            <section class="gallery-section">
+                <h3>Select Image for Annotation</h3>
+                <div id="image-gallery" class="image-gallery">
+                    <!-- Images will be added here dynamically -->
+                </div>
+            </section>
+
+            <section class="config-section">
                 <div class="detector-actions">
                     <button id="save-detector-btn" class="btn btn-save">💾 Save Detector</button>
                     <button id="show-api-btn" class="btn btn-secondary" style="display: none;">📋 Use API</button>

@@ -255,8 +255,7 @@ async def list_detectors():
 async def add_example(
     image: UploadFile = File(...),
     class_name: str = Form(...),
-    annotations: str = Form(...),
-    is_positive: bool = Form(True)
+    annotations: str = Form(...)
 ):
     """Add a visual example to a detector configuration."""
     # Normalize class name to detector ID
@@ -264,36 +263,58 @@ async def add_example(
         detector_id = normalize_detector_id(class_name)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid class name: {str(e)}")
-    
+
     # Load image
     image_data = await image.read()
     pil_image = load_and_validate_image(image_data)
-    
+
     # Parse annotations JSON
     try:
         annotation_list = json.loads(annotations)
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid annotations JSON")
-    
+
     # Create or get existing config
     if not detector.config_exists(detector_id):
         detector.new_config(class_name, is_semantic_name=True)
-    
-    # Add visual prompts
+
+    # Get or create image_id first
+    image_id = detector.storage.add_image(pil_image)
+
+    # Extract boxes and labels from annotations (each annotation has isPositive field)
     boxes = [[ann['xmin'], ann['ymin'], ann['xmax'], ann['ymax']] for ann in annotation_list]
-    labels = [is_positive] * len(boxes)
-    
-    detector.update_prompts(detector_id, pil_image, boxes, labels)
-    
-    # Get total examples count
+    labels = [ann.get('isPositive', True) for ann in annotation_list]
+
+    # If no annotations, remove this image from prompts entirely
+    if len(boxes) == 0:
+        if image_id in detector.configs[detector_id]['prompts']:
+            del detector.configs[detector_id]['prompts'][image_id]
+            detector._update_prompt_state(detector_id)
+    else:
+        detector.update_prompts(detector_id, pil_image, boxes, labels)
+
+    # Add this image to uploaded_images list if not already there
     config = detector.configs[detector_id]
+    uploaded_images = config.get('uploaded_images', [])
+
+    # Check if image is already in the list
+    if not any(img['id'] == image_id for img in uploaded_images):
+        uploaded_images.append({
+            'id': image_id,
+            'filename': f'image_{image_id}.png',
+            'size': list(pil_image.size)
+        })
+        config['uploaded_images'] = uploaded_images
+
+    # Get total examples count
     total_examples = len(config['prompts'])
-    
+
     return JSONResponse(content={
         "message": "Example added successfully",
         "total_examples": total_examples,
         "detector_id": detector_id,
-        "class_name": config['class_name']
+        "class_name": config['class_name'],
+        "image_id": image_id  # Return the image_id so frontend can track it
     })
 
 class CreateDetectorRequest(BaseModel):
@@ -392,14 +413,14 @@ async def get_uploaded_images(detector_name: str):
     """Get uploaded images for a detector configuration."""
     if not detector.config_exists(detector_name):
         raise HTTPException(status_code=404, detail=f"Detector {detector_name} not found")
-    
+
     # Load config if not in memory
     if detector_name not in detector.configs:
         detector.load_config(detector_name)
-    
+
     config = detector.configs[detector_name]
     uploaded_images = config.get('uploaded_images', [])
-    
+
     # Return image URLs pointing to static file serving
     image_data = []
     for img_info in uploaded_images:
@@ -416,8 +437,41 @@ async def get_uploaded_images(detector_name: str):
 
         except Exception as e:
             continue
-    
+
     return JSONResponse(content={"images": image_data})
+
+@app.get("/detect/{detector_name}/annotations/{image_id}")
+async def get_image_annotations(detector_name: str, image_id: str):
+    """Get annotations for a specific image in a detector configuration."""
+    if not detector.config_exists(detector_name):
+        raise HTTPException(status_code=404, detail=f"Detector {detector_name} not found")
+
+    # Load config if not in memory
+    if detector_name not in detector.configs:
+        detector.load_config(detector_name)
+
+    config = detector.configs[detector_name]
+    prompts = config.get('prompts', {})
+
+    # Check if this image has annotations
+    if image_id not in prompts:
+        return JSONResponse(content={"annotations": []})
+
+    prompt_data = prompts[image_id]
+    annotations = []
+
+    # Convert boxes and labels to annotation format
+    for i, (box, is_positive) in enumerate(zip(prompt_data['boxes'], prompt_data['labels'])):
+        annotations.append({
+            "xmin": box[0],
+            "ymin": box[1],
+            "xmax": box[2],
+            "ymax": box[3],
+            "isPositive": is_positive,
+            "label": "existing_annotation"
+        })
+
+    return JSONResponse(content={"annotations": annotations})
 
 @app.delete("/detect/{detector_name}")
 async def delete_detector(detector_name: str):

@@ -39,21 +39,28 @@ class CanvasAnnotations {
     }
 
     loadImage(imageFile) {
-        const img = new Image();
-        img.onload = () => {
-            this.currentImage = img;
-            this.fitImageToCanvas(img);
-            this.redraw();
-            document.querySelector('.canvas-overlay').classList.add('hidden');
-        };
-        
-        if (imageFile instanceof File) {
-            const reader = new FileReader();
-            reader.onload = (e) => img.src = e.target.result;
-            reader.readAsDataURL(imageFile);
-        } else {
-            img.src = imageFile; // URL string
-        }
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => {
+                this.currentImage = img;
+                this.fitImageToCanvas(img);
+                this.redraw();
+                document.querySelector('.canvas-overlay').classList.add('hidden');
+                resolve();
+            };
+            img.onerror = (error) => {
+                reject(error);
+            };
+
+            if (imageFile instanceof File) {
+                const reader = new FileReader();
+                reader.onload = (e) => img.src = e.target.result;
+                reader.onerror = (error) => reject(error);
+                reader.readAsDataURL(imageFile);
+            } else {
+                img.src = imageFile; // URL string
+            }
+        });
     }
 
     fitImageToCanvas(img) {

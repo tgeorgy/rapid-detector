@@ -4,14 +4,55 @@ class DetectorApp {
         this.uploadedImages = [];
         this.savedImageData = [];
         this.selectedImage = null;
+        this.selectedImageId = null; // Track the image_id for API calls
+        this.selectedImageIndex = null; // Track which image is selected
+        this.imageIdMap = new Map(); // Map image index -> image_id for uploaded images
         this.currentClassName = '';  // Human-readable class name
         this.detectorId = '';        // Normalized detector ID for API calls
         this.apiBaseUrl = 'http://localhost:8000';
         this.examplesUpdateTimer = null;
         this.currentAnnotationMode = 'positive'; // Default to positive
         this.pendingAnnotations = []; // Store annotations before submission
-        
+
         this.initializeEventListeners();
+        this.updateUIState(); // Disable all elements initially
+    }
+
+    updateUIState() {
+        const hasDetector = !!this.detectorId;
+
+        // Upload section
+        const imageUpload = document.getElementById('image-upload');
+        const uploadLabel = document.querySelector('label[for="image-upload"]');
+        imageUpload.disabled = !hasDetector;
+        if (hasDetector) {
+            uploadLabel.classList.remove('disabled');
+        } else {
+            uploadLabel.classList.add('disabled');
+        }
+
+        // Annotation toolbar
+        document.getElementById('positive-tool').disabled = !hasDetector;
+        document.getElementById('negative-tool').disabled = !hasDetector;
+        document.getElementById('clear-annotations').disabled = !hasDetector;
+        // Submit button already controlled by annotation count
+
+        // Save detector button
+        document.getElementById('save-detector-btn').disabled = !hasDetector;
+
+        // Canvas overlay - show/hide message
+        const canvasOverlay = document.getElementById('canvas-overlay');
+        if (!hasDetector) {
+            canvasOverlay.style.display = 'flex';
+            canvasOverlay.querySelector('.canvas-placeholder').textContent =
+                'Select or create a detector class to begin';
+        } else if (!this.selectedImage) {
+            canvasOverlay.style.display = 'flex';
+            canvasOverlay.querySelector('.canvas-placeholder').textContent =
+                'Select an image from the gallery to start annotating';
+        } else {
+            canvasOverlay.style.display = 'none';
+        }
     }
 
     initializeEventListeners() {
@@ -63,36 +104,47 @@ class DetectorApp {
 
     handleDragOver(e) {
         e.preventDefault();
+        if (!this.detectorId) return; // Ignore if no detector selected
         e.target.closest('.upload-area').style.borderColor = '#667eea';
     }
 
     handleDrop(e) {
         e.preventDefault();
+        if (!this.detectorId) return; // Ignore if no detector selected
+
         const uploadArea = e.target.closest('.upload-area');
         uploadArea.style.borderColor = '#cbd5e0';
-        
-        const files = Array.from(e.dataTransfer.files).filter(file => 
+
+        const files = Array.from(e.dataTransfer.files).filter(file =>
             file.type.startsWith('image/')
         );
-        
+
         if (files.length > 0) {
             this.processImages(files);
         }
     }
 
     handleImageUpload(e) {
+        if (!this.detectorId) {
+            this.updateStatus('❌ Please select or create a detector first', 'error');
+            e.target.value = ''; // Reset file input
+            return;
+        }
         const files = Array.from(e.target.files);
         this.processImages(files);
     }
 
     processImages(files) {
-        this.uploadedImages = files;
+        // Append new images to existing ones instead of replacing
+        const newImagesStartIndex = this.uploadedImages.length;
+        this.uploadedImages = [...this.uploadedImages, ...files];
+
         this.updateImageGallery();
-        this.updateStatus('✅ Images uploaded successfully');
-        
-        // Auto-select first image
+        this.updateStatus(`✅ Added ${files.length} image(s) - Total: ${this.uploadedImages.length}`);
+
+        // Auto-select first NEW image
         if (files.length > 0) {
-            this.selectImage(0);
+            this.selectImage(newImagesStartIndex);
         }
     }
 
@@ -111,21 +163,34 @@ class DetectorApp {
         });
     }
 
-    selectImage(index) {
+    async selectImage(index) {
         // Clear pending annotations when switching images
         this.clearPendingAnnotations();
-        
+
         // Update visual selection
         document.querySelectorAll('.gallery-image').forEach((img, i) => {
             img.classList.toggle('selected', i === index);
         });
-        
+
         // Load image to canvas
         this.selectedImage = this.uploadedImages[index];
-        canvasAnnotations.loadImage(this.selectedImage);
-        
+        this.selectedImageIndex = index;
+
+        // Check if this uploaded image has an ID from previous submission
+        this.selectedImageId = this.imageIdMap.get(index) || null;
+
+        await canvasAnnotations.loadImage(this.selectedImage);
+
+        // Update UI state to hide overlay
+        this.updateUIState();
+
         this.updateStatus(`📸 Selected image ${index + 1}`);
-        
+
+        // Load existing annotations if this image has been annotated before
+        if (this.detectorId && this.selectedImageId) {
+            await this.loadImageAnnotations(this.selectedImageId);
+        }
+
         // Auto-run detection if we have a detector and class name
         if (this.currentClassName && this.detectorId) {
             this.updateStatus(`🔄 Auto-detecting on new image...`, 'info');
@@ -162,7 +227,10 @@ class DetectorApp {
         // Enable/disable delete button
         const deleteBtn = document.getElementById('delete-detector-btn');
         deleteBtn.disabled = !selectedDetectorId;
-        
+
+        // Update UI state (enable/disable elements)
+        this.updateUIState();
+
         // Clear pending annotations when switching detectors
         this.clearPendingAnnotations();
         
@@ -289,8 +357,9 @@ class DetectorApp {
             
             // Disable delete button and update displays
             document.getElementById('delete-detector-btn').disabled = true;
+            this.updateUIState(); // Update UI state after deletion
             this.updateExamplesDisplay();
-            
+
             this.updateStatus(`✅ Deleted detector successfully`, 'success');
 
         } catch (error) {
@@ -324,16 +393,22 @@ class DetectorApp {
     updateAnnotationCounter() {
         const positiveCount = this.pendingAnnotations.filter(a => a.isPositive).length;
         const negativeCount = this.pendingAnnotations.filter(a => !a.isPositive).length;
-        
+
         document.getElementById('positive-count').textContent = `✅ ${positiveCount}`;
         document.getElementById('negative-count').textContent = `❌ ${negativeCount}`;
-        
-        // Enable/disable submit button
+
+        // Enable submit button if:
+        // 1. There are pending annotations, OR
+        // 2. There are no pending annotations but this is a saved image with existing annotations (can clear them)
         const submitBtn = document.getElementById('submit-annotations');
-        submitBtn.disabled = this.pendingAnnotations.length === 0;
-        
+        const canSubmit = this.pendingAnnotations.length > 0 ||
+                         (this.pendingAnnotations.length === 0 && this.selectedImageId);
+        submitBtn.disabled = !canSubmit;
+
         if (this.pendingAnnotations.length > 0) {
             submitBtn.textContent = `Submit ${this.pendingAnnotations.length} Annotations`;
+        } else if (this.selectedImageId) {
+            submitBtn.textContent = 'Clear Annotations';
         } else {
             submitBtn.textContent = 'Submit Annotations';
         }
@@ -366,42 +441,72 @@ class DetectorApp {
             return;
         }
 
-        if (this.pendingAnnotations.length === 0) {
+        // Allow submitting 0 annotations only if this image already has annotations (to clear them)
+        if (this.pendingAnnotations.length === 0 && !this.selectedImageId) {
             this.updateStatus('❌ Please draw at least one bounding box', 'error');
             return;
         }
 
         try {
-            this.updateStatus('📤 Submitting annotations...', 'info');
-            
-            // Group annotations by type for separate API calls
-            const positiveAnnotations = this.pendingAnnotations.filter(a => a.isPositive);
-            const negativeAnnotations = this.pendingAnnotations.filter(a => !a.isPositive);
-            
-            let totalSubmitted = 0;
-
-            // Submit positive annotations
-            if (positiveAnnotations.length > 0) {
-                await this.submitAnnotationBatch(positiveAnnotations, true);
-                totalSubmitted += positiveAnnotations.length;
+            // If submitting 0 annotations for an existing image, show confirmation
+            if (this.pendingAnnotations.length === 0 && this.selectedImageId) {
+                if (!confirm('Are you sure you want to remove all annotations for this image?')) {
+                    return;
+                }
+                this.updateStatus('📤 Removing annotations...', 'info');
+            } else {
+                this.updateStatus('📤 Submitting annotations...', 'info');
             }
 
-            // Submit negative annotations
-            if (negativeAnnotations.length > 0) {
-                await this.submitAnnotationBatch(negativeAnnotations, false);
-                totalSubmitted += negativeAnnotations.length;
+            // Submit all annotations in a single API call (preserves both positive and negative)
+            const formData = new FormData();
+            formData.append('image', this.selectedImage);
+            formData.append('class_name', this.currentClassName);
+            formData.append('annotations', JSON.stringify(this.pendingAnnotations));
+
+            const response = await fetch(`${this.apiBaseUrl}/add_example`, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
 
-            // Clear pending annotations and update UI
-            this.pendingAnnotations = [];
-            this.updateAnnotationCounter();
-            canvasAnnotations.clearAnnotations();
-            
-            this.updateStatus(`✅ Submitted ${totalSubmitted} annotations successfully!`, 'success');
-            
+            const result = await response.json();
+
+            // Store the image_id for future reference (important for newly uploaded images)
+            if (result.image_id) {
+                this.selectedImageId = result.image_id;
+
+                // If this is an uploaded image (not a saved image), store the ID in the map
+                if (this.selectedImageIndex !== null) {
+                    this.imageIdMap.set(this.selectedImageIndex, result.image_id);
+                }
+            }
+
+            // Check if we removed annotations
+            const wasRemoval = this.pendingAnnotations.length === 0;
+
+            if (wasRemoval) {
+                // Clear annotations from canvas if we removed them
+                this.pendingAnnotations = [];
+                this.updateAnnotationCounter();
+                canvasAnnotations.clearAnnotations();
+                this.updateStatus(`✅ Removed all annotations for this image!`, 'success');
+            } else {
+                // Reload annotations from backend to keep them visible
+                this.updateStatus(`✅ Submitted annotations successfully!`, 'success');
+
+                // Reload the annotations so they stay visible on canvas
+                if (this.selectedImageId) {
+                    await this.loadImageAnnotations(this.selectedImageId);
+                }
+            }
+
             // Update examples display
             this.updateExamplesDisplay();
-            
+
             // Automatically run detection after successful annotation submission
             this.updateStatus('🔄 Running detection with new examples...', 'info');
             setTimeout(() => this.runDetection(), 500);
@@ -410,26 +515,6 @@ class DetectorApp {
             console.error('Error submitting annotations:', error);
             this.updateStatus(`❌ Error submitting annotations: ${error.message}`, 'error');
         }
-    }
-
-    async submitAnnotationBatch(annotations, isPositive) {
-        // Prepare form data
-        const formData = new FormData();
-        formData.append('image', this.selectedImage);
-        formData.append('class_name', this.currentClassName);
-        formData.append('annotations', JSON.stringify(annotations));
-        formData.append('is_positive', isPositive);
-
-        const response = await fetch(`${this.apiBaseUrl}/add_example`, {
-            method: 'POST',
-            body: formData
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        return await response.json();
     }
 
     async runDetection() {
@@ -665,27 +750,71 @@ class DetectorApp {
     async selectSavedImage(index) {
         // Clear pending annotations when switching images
         this.clearPendingAnnotations();
-        
+
         // Update visual selection
         document.querySelectorAll('.gallery-image').forEach((img, i) => {
             img.classList.toggle('selected', i === index);
         });
-        
+
         const imgData = this.savedImageData[index];
-        
+
         // Convert to File object only when needed for canvas (lazy conversion)
         const response = await fetch(imgData.url); // Use static file URL
         const blob = await response.blob();
         this.selectedImage = new File([blob], imgData.filename || `image_${index}.png`, { type: 'image/png' });
-        
-        canvasAnnotations.loadImage(this.selectedImage);
-        
+        this.selectedImageId = imgData.id; // Track the image_id for loading annotations
+        this.selectedImageIndex = null; // Not from uploadedImages array
+
+        // Wait for image to load before adding annotations
+        await canvasAnnotations.loadImage(this.selectedImage);
+
+        // Update UI state to hide overlay
+        this.updateUIState();
+
         this.updateStatus(`📸 Selected saved image ${index + 1}`);
-        
+
+        // Load existing annotations for this image (after image is loaded)
+        if (this.detectorId && this.selectedImageId) {
+            await this.loadImageAnnotations(this.selectedImageId);
+        }
+
         // Auto-run detection if we have a detector
         if (this.currentClassName && this.detectorId) {
             this.updateStatus(`🔄 Auto-detecting on saved image...`, 'info');
             setTimeout(() => this.runDetection(), 500);
+        }
+    }
+
+    async loadImageAnnotations(imageId) {
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/detect/${encodeURIComponent(this.detectorId)}/annotations/${encodeURIComponent(imageId)}`);
+
+            if (!response.ok) {
+                // No annotations exist for this image
+                return;
+            }
+
+            const data = await response.json();
+
+            if (data.annotations && data.annotations.length > 0) {
+                // Load existing annotations as pending annotations
+                this.pendingAnnotations = data.annotations;
+
+                // Display them on canvas
+                data.annotations.forEach(ann => {
+                    canvasAnnotations.userAnnotations.push(ann);
+                });
+                canvasAnnotations.redraw();
+
+                // Update counter
+                this.updateAnnotationCounter();
+
+                this.updateStatus(`📋 Loaded ${data.annotations.length} existing annotation(s)`, 'info');
+            }
+
+        } catch (error) {
+            console.error('Error loading annotations:', error);
+            // Silently fail - no annotations exist
         }
     }
 

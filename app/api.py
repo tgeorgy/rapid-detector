@@ -371,13 +371,20 @@ async def save_uploaded_images(
         except Exception as e:
             continue
     
-    # Save image list to detector config
+    # Append new images to existing uploaded images list
     config = detector.configs[detector_name]
-    config['uploaded_images'] = saved_images
+    existing_images = config.get('uploaded_images', [])
+
+    # Combine existing and new images, avoiding duplicates by ID
+    existing_ids = {img['id'] for img in existing_images}
+    new_unique_images = [img for img in saved_images if img['id'] not in existing_ids]
+
+    config['uploaded_images'] = existing_images + new_unique_images
     
     return JSONResponse(content={
-        "message": f"Saved {len(saved_images)} images",
-        "images": saved_images
+        "message": f"Added {len(new_unique_images)} new images ({len(saved_images) - len(new_unique_images)} duplicates skipped)",
+        "images": saved_images,
+        "total_images": len(config['uploaded_images'])
     })
 
 @app.get("/uploaded_images/{detector_name}")

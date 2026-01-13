@@ -8,6 +8,8 @@ from sam3.model import box_ops
 from sam3.visualization_utils import normalize_bbox
 import torch
 import torch.nn.functional as F
+import torchvision
+
 
 from .storage import DetectorStorage
 from .utils import normalize_detector_id, get_prompt_text
@@ -41,7 +43,7 @@ class RapidDetector:
         # Get the prompt text based on detector configuration
         config = self.configs[detector_id]
         prompt_text = get_prompt_text(config['class_name'], config['is_semantic_name'])
-        
+
         text_outputs = self.model.backbone.forward_text([prompt_text], device=self.processor.device)
         features = text_outputs["language_features"][:, :1]
         mask = text_outputs["language_mask"][:1]
@@ -52,6 +54,58 @@ class RapidDetector:
             features = torch.cat([features, visual_features], 0)
             mask = torch.cat([mask, visual_mask], 1)
         return {'prompt': features.cpu(), 'prompt_mask': mask.cpu()}
+
+    @staticmethod
+    def _encode_boxes(self, boxes, boxes_mask, boxes_labels, img_feats):
+        boxes_embed = None
+        n_boxes, bs = boxes.shape[:2]
+
+        if self.boxes_direct_project is not None:
+            proj = self.boxes_direct_project(boxes*0 + 0.5)
+            assert boxes_embed is None
+            boxes_embed = proj
+
+        if self.boxes_pool_project is not None:
+            H, W = img_feats.shape[-2:]
+
+            # boxes are [Num_boxes, bs, 4], normalized in [0, 1]
+            # We need to denormalize, and convert to [x, y, x, y]
+            boxes_xyxy = box_ops.box_cxcywh_to_xyxy(boxes)
+            scale = torch.tensor([W, H, W, H], dtype=boxes_xyxy.dtype)
+            scale = scale.pin_memory().to(device=boxes_xyxy.device, non_blocking=True)
+            scale = scale.view(1, 1, 4)
+            boxes_xyxy = boxes_xyxy * scale
+            sampled = torchvision.ops.roi_align(
+                img_feats, boxes_xyxy.float().transpose(0, 1).unbind(0), self.roi_size
+            )
+            assert list(sampled.shape) == [
+                bs * n_boxes,
+                self.d_model,
+                self.roi_size,
+                self.roi_size,
+            ]
+            proj = self.boxes_pool_project(sampled)
+            proj = proj.view(bs, n_boxes, self.d_model).transpose(0, 1)
+            if boxes_embed is None:
+                boxes_embed = proj
+            else:
+                boxes_embed = boxes_embed + proj
+
+        if self.boxes_pos_enc_project is not None:
+            cx, cy, w, h = boxes.unbind(-1)
+            enc = self.pos_enc.encode_boxes(
+                cx.flatten()*0+0.5, cy.flatten()*0+0.5, w.flatten()*0, h.flatten()*0
+            )
+            enc = enc.view(boxes.shape[0], boxes.shape[1], enc.shape[-1])
+
+            proj = self.boxes_pos_enc_project(enc)
+            if boxes_embed is None:
+                boxes_embed = proj
+            else:
+                boxes_embed = boxes_embed + proj
+
+        type_embed = self.label_embed(boxes_labels.long())
+        return type_embed + boxes_embed, boxes_mask
 
     @torch.inference_mode
     def encode_visual_prompts(self, prompts: dict) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -90,7 +144,8 @@ class RapidDetector:
             labels = torch.tensor(prompt_data['labels'], device=processor.device, dtype=torch.bool).view(-1, 1)
             boxes = normalize_bbox(box_ops.box_xyxy_to_cxcywh(boxes), img_data['original_width'], img_data['original_height'])
 
-            box_embeds, box_masks = geo_encoder._encode_boxes(
+            box_embeds, box_masks = self._encode_boxes(
+                geo_encoder,
                 boxes=boxes,
                 boxes_mask=torch.zeros_like(labels),
                 boxes_labels=labels,

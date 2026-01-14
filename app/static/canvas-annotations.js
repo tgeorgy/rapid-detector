@@ -85,9 +85,19 @@ class CanvasAnnotations {
 
     getMousePos(e) {
         const rect = this.canvas.getBoundingClientRect();
+
+        // Convert from screen coordinates to canvas buffer coordinates
+        // (accounts for CSS scaling of the canvas element)
+        const scaleX = this.canvas.width / rect.width;
+        const scaleY = this.canvas.height / rect.height;
+
+        const canvasX = (e.clientX - rect.left) * scaleX;
+        const canvasY = (e.clientY - rect.top) * scaleY;
+
+        // Convert from canvas buffer coordinates to original image coordinates
         return {
-            x: (e.clientX - rect.left) / this.scale,
-            y: (e.clientY - rect.top) / this.scale
+            x: canvasX / this.scale,
+            y: canvasY / this.scale
         };
     }
 

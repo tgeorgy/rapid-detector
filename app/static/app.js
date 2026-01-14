@@ -108,7 +108,7 @@ class DetectorApp {
         e.target.closest('.upload-area').style.borderColor = '#667eea';
     }
 
-    handleDrop(e) {
+    async handleDrop(e) {
         e.preventDefault();
         if (!this.detectorId) return; // Ignore if no detector selected
 
@@ -120,27 +120,32 @@ class DetectorApp {
         );
 
         if (files.length > 0) {
-            this.processImages(files);
+            await this.processImages(files);
         }
     }
 
-    handleImageUpload(e) {
+    async handleImageUpload(e) {
         if (!this.detectorId) {
             this.updateStatus('❌ Please select or create a detector first', 'error');
             e.target.value = ''; // Reset file input
             return;
         }
         const files = Array.from(e.target.files);
-        this.processImages(files);
+        await this.processImages(files);
     }
 
-    processImages(files) {
+    async processImages(files) {
         // Append new images to existing ones instead of replacing
         const newImagesStartIndex = this.uploadedImages.length;
         this.uploadedImages = [...this.uploadedImages, ...files];
 
         this.updateImageGallery();
         this.updateStatus(`✅ Added ${files.length} image(s) - Total: ${this.uploadedImages.length}`);
+
+        // Register images with backend immediately (so they persist on reload)
+        if (this.detectorId) {
+            await this.registerImages(files, newImagesStartIndex);
+        }
 
         // Auto-select first NEW image
         if (files.length > 0) {
@@ -652,6 +657,44 @@ class DetectorApp {
         } catch (error) {
             console.error('Error saving detector:', error);
             this.updateStatus(`❌ Error saving detector: ${error.message}`, 'error');
+        }
+    }
+
+    async registerImages(files, startIndex) {
+        if (!this.detectorId || files.length === 0) {
+            return;
+        }
+
+        try {
+            const formData = new FormData();
+            files.forEach((file) => {
+                formData.append('images', file);
+            });
+
+            const response = await fetch(`${this.apiBaseUrl}/register_images/${encodeURIComponent(this.detectorId)}`, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+
+            // Store image_ids in the map for these newly uploaded images
+            if (result.images) {
+                result.images.forEach((imgData, index) => {
+                    const imageIndex = startIndex + index;
+                    this.imageIdMap.set(imageIndex, imgData.id);
+                });
+            }
+
+            this.updateStatus(`📝 Registered ${result.images.length} image(s) with detector`, 'info');
+
+        } catch (error) {
+            console.error('Error registering images:', error);
+            this.updateStatus(`⚠️ Could not register images: ${error.message}`, 'warning');
         }
     }
 

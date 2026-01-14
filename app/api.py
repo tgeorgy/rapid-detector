@@ -362,6 +362,51 @@ async def save_detector(detector_name: str, uploaded_images: Optional[str] = For
         "total_examples": total_examples
     })
 
+@app.post("/register_images/{detector_name}")
+async def register_images(
+    detector_name: str,
+    images: List[UploadFile] = File(...)
+):
+    """Register uploaded images for a detector without requiring annotations."""
+    if not detector.config_exists(detector_name):
+        raise HTTPException(status_code=404, detail=f"Detector {detector_name} not found")
+
+    registered_images = []
+
+    for image in images:
+        try:
+            # Load and validate image
+            image_data = await image.read()
+            pil_image = load_and_validate_image(image_data)
+
+            # Store image and get hash ID
+            image_id = detector.storage.add_image(pil_image)
+
+            registered_images.append({
+                "id": image_id,
+                "filename": image.filename,
+                "size": list(pil_image.size)
+            })
+
+        except Exception as e:
+            continue
+
+    # Add new images to uploaded_images list
+    config = detector.configs[detector_name]
+    existing_images = config.get('uploaded_images', [])
+
+    # Combine existing and new images, avoiding duplicates by ID
+    existing_ids = {img['id'] for img in existing_images}
+    new_unique_images = [img for img in registered_images if img['id'] not in existing_ids]
+
+    config['uploaded_images'] = existing_images + new_unique_images
+
+    return JSONResponse(content={
+        "message": f"Registered {len(new_unique_images)} new images",
+        "images": registered_images,
+        "total_images": len(config['uploaded_images'])
+    })
+
 @app.post("/save_uploaded_images/{detector_name}")
 async def save_uploaded_images(
     detector_name: str,
@@ -371,27 +416,27 @@ async def save_uploaded_images(
     if not detector.config_exists(detector_name):
         # Create new detector if it doesn't exist
         detector.new_config(detector_name, is_semantic_name=True)
-    
+
     saved_images = []
-    
+
     for image in images:
         try:
             # Load and validate image
             image_data = await image.read()
             pil_image = load_and_validate_image(image_data)
-            
+
             # Store image and get hash ID
             image_id = detector.storage.add_image(pil_image)
-            
+
             saved_images.append({
                 "id": image_id,
                 "filename": image.filename,
                 "size": list(pil_image.size)
             })
-            
+
         except Exception as e:
             continue
-    
+
     # Append new images to existing uploaded images list
     config = detector.configs[detector_name]
     existing_images = config.get('uploaded_images', [])
@@ -401,7 +446,7 @@ async def save_uploaded_images(
     new_unique_images = [img for img in saved_images if img['id'] not in existing_ids]
 
     config['uploaded_images'] = existing_images + new_unique_images
-    
+
     return JSONResponse(content={
         "message": f"Added {len(new_unique_images)} new images ({len(saved_images) - len(new_unique_images)} duplicates skipped)",
         "images": saved_images,

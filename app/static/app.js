@@ -169,8 +169,9 @@ class DetectorApp {
     }
 
     async selectImage(index) {
-        // Clear pending annotations when switching images
+        // Clear annotations and predictions immediately
         this.clearPendingAnnotations();
+        canvasAnnotations.clearPredictions();
 
         // Update visual selection
         document.querySelectorAll('.gallery-image').forEach((img, i) => {
@@ -205,7 +206,10 @@ class DetectorApp {
 
     async handleDetectorSelection(e) {
         const selectedDetectorId = e.target.value;
-        
+
+        // Reset images UI when switching detectors
+        this.resetImagesUI();
+
         // Get the detector info to retrieve the original class name
         if (selectedDetectorId) {
             try {
@@ -354,12 +358,15 @@ class DetectorApp {
 
             // Reload detectors list and clear selection
             await this.loadDetectorsList();
-            
+
             const detectorSelect = document.getElementById('detector-select');
             detectorSelect.value = '';
             this.currentClassName = '';
             this.detectorId = '';
-            
+
+            // Reset images and canvas
+            this.resetImagesUI();
+
             // Disable delete button and update displays
             document.getElementById('delete-detector-btn').disabled = true;
             this.updateUIState(); // Update UI state after deletion
@@ -373,14 +380,38 @@ class DetectorApp {
         }
     }
 
+    resetImagesUI() {
+        // Clear all image-related state
+        this.uploadedImages = [];
+        this.savedImageData = [];
+        this.selectedImage = null;
+        this.selectedImageId = null;
+        this.selectedImageIndex = null;
+        this.imageIdMap.clear();
+
+        // Clear the gallery
+        this.updateImageGallery();
+
+        // Clear the canvas
+        if (typeof canvasAnnotations !== 'undefined') {
+            canvasAnnotations.clearAnnotations();
+            canvasAnnotations.clearPredictions();
+            canvasAnnotations.clearCanvas();
+        }
+
+        // Clear pending annotations
+        this.pendingAnnotations = [];
+        this.updateAnnotationCounter();
+    }
+
     setAnnotationMode(mode) {
         this.currentAnnotationMode = mode;
-        
+
         // Update toolbar visual state
         document.querySelectorAll('.tool-btn[data-type]').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.type === mode);
         });
-        
+
         this.updateStatus(`🎨 ${mode === 'positive' ? 'Positive' : 'Negative'} annotation mode active`);
     }
 
@@ -791,8 +822,9 @@ class DetectorApp {
     }
 
     async selectSavedImage(index) {
-        // Clear pending annotations when switching images
+        // Clear annotations and predictions immediately
         this.clearPendingAnnotations();
+        canvasAnnotations.clearPredictions();
 
         // Update visual selection
         document.querySelectorAll('.gallery-image').forEach((img, i) => {

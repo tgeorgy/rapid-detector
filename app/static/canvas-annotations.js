@@ -437,6 +437,16 @@ class CanvasAnnotations {
         this.redraw();
     }
 
+    clearCanvas() {
+        // Full reset of canvas state
+        this.currentImage = null;
+        this.userAnnotations = [];
+        this.modelPredictions = [];
+        this.idMaskImage = null;
+        this.idMaskPng = null;
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+
     getAnnotations() {
         return {
             userAnnotations: this.userAnnotations,

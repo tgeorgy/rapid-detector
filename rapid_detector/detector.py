@@ -10,14 +10,19 @@ import torch
 import torch.nn.functional as F
 import torchvision
 
-
 from .storage import DetectorStorage
 from .utils import normalize_detector_id, get_prompt_text
+from .visual_encoder import VisualEncoder
 
 
 class RapidDetector:
     def __init__(self, storage: Optional[DetectorStorage] = None, auto_load: bool = True):
         self.model = build_sam3_image_model()
+        self.visual_encoder = VisualEncoder.from_pretrained(
+            'tgeorgy/sam3-visual-encoder',
+            revision='231b5f07ee432a40d46a2fd8fc816ffe011f7cf9')
+        self.visual_encoder.eval()
+        self.visual_encoder.cuda()
         self.processor = Sam3Processor(self.model)
         self.storage = storage or DetectorStorage()
         self.configs = {}
@@ -57,52 +62,37 @@ class RapidDetector:
 
     @staticmethod
     def _encode_boxes(self, boxes, boxes_mask, boxes_labels, img_feats):
-        boxes_embed = None
         n_boxes, bs = boxes.shape[:2]
 
-        if self.boxes_direct_project is not None:
-            proj = self.boxes_direct_project(boxes*0 + 0.5)
-            assert boxes_embed is None
-            boxes_embed = proj
+        # boxes_direct_project
+        boxes_embed = self.boxes_direct_project(boxes)
 
-        if self.boxes_pool_project is not None:
-            H, W = img_feats.shape[-2:]
+        # boxes_pool_project
+        H, W = img_feats.shape[-2:]
 
-            # boxes are [Num_boxes, bs, 4], normalized in [0, 1]
-            # We need to denormalize, and convert to [x, y, x, y]
-            boxes_xyxy = box_ops.box_cxcywh_to_xyxy(boxes)
-            scale = torch.tensor([W, H, W, H], dtype=boxes_xyxy.dtype)
-            scale = scale.pin_memory().to(device=boxes_xyxy.device, non_blocking=True)
-            scale = scale.view(1, 1, 4)
-            boxes_xyxy = boxes_xyxy * scale
-            sampled = torchvision.ops.roi_align(
-                img_feats, boxes_xyxy.float().transpose(0, 1).unbind(0), self.roi_size
-            )
-            assert list(sampled.shape) == [
-                bs * n_boxes,
-                self.d_model,
-                self.roi_size,
-                self.roi_size,
-            ]
-            proj = self.boxes_pool_project(sampled)
-            proj = proj.view(bs, n_boxes, self.d_model).transpose(0, 1)
-            if boxes_embed is None:
-                boxes_embed = proj
-            else:
-                boxes_embed = boxes_embed + proj
+        # boxes are [Num_boxes, bs, 4], normalized in [0, 1]
+        # We need to denormalize, and convert to [x, y, x, y]
+        boxes_xyxy = box_ops.box_cxcywh_to_xyxy(boxes)
+        scale = torch.tensor([W, H, W, H], dtype=boxes_xyxy.dtype)
+        scale = scale.pin_memory().to(device=boxes_xyxy.device, non_blocking=True)
+        scale = scale.view(1, 1, 4)
+        boxes_xyxy = boxes_xyxy * scale
+        sampled = torchvision.ops.roi_align(
+            img_feats, boxes_xyxy.float().transpose(0, 1).unbind(0), self.roi_size
+        )
 
-        if self.boxes_pos_enc_project is not None:
-            cx, cy, w, h = boxes.unbind(-1)
-            enc = self.pos_enc.encode_boxes(
-                cx.flatten()*0+0.5, cy.flatten()*0+0.5, w.flatten()*0, h.flatten()*0
-            )
-            enc = enc.view(boxes.shape[0], boxes.shape[1], enc.shape[-1])
+        proj = self.boxes_pool_project(sampled)
+        proj = proj.view(bs, n_boxes, self.d_model).transpose(0, 1)
+        boxes_embed = boxes_embed + proj
 
-            proj = self.boxes_pos_enc_project(enc)
-            if boxes_embed is None:
-                boxes_embed = proj
-            else:
-                boxes_embed = boxes_embed + proj
+        # boxes_pos_enc_project
+        cx, cy, w, h = boxes.unbind(-1)
+        enc = self.pos_enc.encode_boxes(
+            cx.flatten(), cy.flatten(), w.flatten(), h.flatten()
+        )
+        enc = enc.view(boxes.shape[0], boxes.shape[1], enc.shape[-1])
+
+        boxes_embed = boxes_embed + self.boxes_pos_enc_project(enc)
 
         type_embed = self.label_embed(boxes_labels.long())
         return type_embed + boxes_embed, boxes_mask
@@ -111,91 +101,86 @@ class RapidDetector:
     def encode_visual_prompts(self, prompts: dict) -> Tuple[torch.Tensor, torch.Tensor]:
         processor = self.processor
         model = self.model
-        geo_encoder = model.geometry_encoder
+        visual_encoder = self.visual_encoder
+        
         all_image_features = []
         all_image_pos_embeds = []
         all_box_embeds = []
         all_box_masks = []
         box_image_ids = []
         token_image_ids = []
-        img_i = 0
-        for image_id, prompt_data in prompts.items():
-            if len(prompt_data['boxes']) == 0:
-                continue
-
-            # encode images
+        
+        # Process each image and its boxes
+        for img_i, (image_id, prompt_data) in enumerate(prompts.items()):
+            # Encode image
             img = self.storage.get_image(image_id)
             img_data = processor.set_image(img)
-            feat_tuple = model._get_img_feats(
+            _, img_feats, img_pos_embeds, vis_feat_sizes = model._get_img_feats(
                 img_data['backbone_out'], processor.find_stage.img_ids)
-            _, img_feats, img_pos_embeds, vis_feat_sizes = feat_tuple
+            
             img_feats = img_feats[-1]
-        
             all_image_features.append(img_feats)
             all_image_pos_embeds.append(img_pos_embeds[-1])
-        
-            # encode boxes
-            img_feats = geo_encoder.img_pre_norm(img_feats)
+            
+            # Prepare features: normalize and reshape
+            img_feats = visual_encoder.img_pre_norm(img_feats)
             H, W = vis_feat_sizes[-1]
             N, C = img_feats.shape[-2:]
             img_feats = img_feats.permute(1, 2, 0).view(N, C, H, W)
-        
-            boxes = torch.tensor(prompt_data['boxes'], device=processor.device, dtype=torch.float32).view(-1, 1, 4)
-            labels = torch.tensor(prompt_data['labels'], device=processor.device, dtype=torch.bool).view(-1, 1)
-            boxes = normalize_bbox(box_ops.box_xyxy_to_cxcywh(boxes), img_data['original_width'], img_data['original_height'])
-
-            box_embeds, box_masks = self._encode_boxes(
-                geo_encoder,
-                boxes=boxes,
-                boxes_mask=torch.zeros_like(labels),
-                boxes_labels=labels,
-                img_feats=img_feats,
+            
+            # Prepare and encode boxes
+            boxes = normalize_bbox(
+                box_ops.box_xyxy_to_cxcywh(
+                    torch.tensor(prompt_data['boxes'], device=processor.device, dtype=torch.float32).view(-1, 1, 4)
+                ),
+                img_data['original_width'], 
+                img_data['original_height']
             )
+            labels = torch.tensor(prompt_data['labels'], device=processor.device, dtype=torch.bool).view(-1, 1)
+            
+            box_embeds, box_masks = self._encode_boxes(
+                visual_encoder, boxes, torch.zeros_like(labels), labels, img_feats)
+            
             all_box_embeds.append(box_embeds)
             all_box_masks.append(box_masks)
-
-            box_image_ids += [img_i] * len(prompt_data['boxes'])
-            token_image_ids += [img_i] * (H*W)
-            img_i += 1
+            box_image_ids.extend([img_i] * len(prompt_data['boxes']))
+            token_image_ids.extend([img_i] * (H * W))
         
-        # combine everything before encoding
-        all_box_embeds.append(geo_encoder.cls_embed.weight.view(1, 1, geo_encoder.d_model))
-        all_box_masks.append(torch.zeros(
-            1, 1, dtype=all_box_masks[-1].dtype, device=all_box_masks[-1].device
-        ))
-        final_embeds = torch.cat(all_box_embeds, 0)
-        final_mask = torch.cat(all_box_masks, 0).T
-        final_embeds = geo_encoder.norm(geo_encoder.final_proj(final_embeds))
+        # Add CLS token and prepare queries
+        all_box_embeds.append(visual_encoder.cls_embed.weight.view(1, 1, -1))
+        all_box_masks.append(torch.zeros(1, 1, dtype=all_box_masks[0].dtype, device=all_box_masks[0].device))
+        box_image_ids.append(0)  # CLS token
         
-        all_image_features = torch.cat(all_image_features, 0)
-        all_image_pos_embeds = torch.cat(all_image_pos_embeds, 0)
-
-        box_image_ids.append(0) # cls token mask padding
-        box_image_ids = torch.tensor(box_image_ids, dtype=torch.long)
-        token_image_ids = torch.tensor(token_image_ids, dtype=torch.long)
-
-        # cross attn mask
-        attn_mask = box_image_ids[:, None] != token_image_ids[None, :]
-        attn_mask[-1] = False # cls token attn
-        attn_mask = attn_mask.to(final_mask)
-
-        # encode visual (geometric?) prompts
-        for lay in geo_encoder.encode:
-            final_embeds = lay(
-                tgt=final_embeds,
-                memory=all_image_features,
-                tgt_key_padding_mask=final_mask,
-                pos=all_image_pos_embeds,
-                memory_mask=attn_mask,
-            )
-
-        final_embeds = geo_encoder.encode_norm(final_embeds)
-        return final_embeds, final_mask
+        query_embeds = visual_encoder.norm(visual_encoder.final_proj(torch.cat(all_box_embeds, 0)))
+        query_mask = torch.cat(all_box_masks, 0).T
+        
+        # Prepare memory
+        memory_features = torch.cat(all_image_features, 0)
+        memory_pos = torch.cat(all_image_pos_embeds, 0)
+        
+        # Create attention mask (prevent cross-image attention, except CLS)
+        attn_mask = (
+            torch.tensor(box_image_ids, dtype=torch.long)[:, None] != 
+            torch.tensor(token_image_ids, dtype=torch.long)[None, :]
+        ).to(query_mask)
+        attn_mask[-1] = False  # CLS attends to all
+        
+        # Cross-attention encoding
+        for layer in visual_encoder.encode:
+            query_embeds = layer(
+                tgt=query_embeds,
+                memory=memory_features,
+                tgt_key_padding_mask=query_mask,
+                pos=memory_pos,
+                memory_mask=attn_mask)
+        
+        return visual_encoder.encode_norm(query_embeds), query_mask
 
     @torch.inference_mode
     def process_predictions(self, image_wh, predictions, confidence_threshold=0.5):
         out_probs = predictions["pred_logits"].sigmoid()
-        presence_score = predictions["presence_logit_dec"].sigmoid().unsqueeze(1)
+        #presence_score = predictions["presence_logit_dec"].sigmoid().unsqueeze(1)
+        presence_score = 1
         out_probs = (out_probs * presence_score).squeeze(-1)
 
         keep = out_probs > confidence_threshold
@@ -225,7 +210,7 @@ class RapidDetector:
 
     @torch.inference_mode
     def _run_model(self, image, prompt, prompt_mask):
-        with torch.amp.autocast('cuda', torch.float16):
+        with torch.amp.autocast('cuda', torch.bfloat16):
             with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
                 image_data = self.processor.set_image(image)
 

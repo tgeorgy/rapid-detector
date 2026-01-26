@@ -412,7 +412,7 @@ class DetectorApp {
             btn.classList.toggle('active', btn.dataset.type === mode);
         });
 
-        this.updateStatus(`🎨 ${mode === 'positive' ? 'Positive' : 'Negative'} annotation mode active`);
+        this.updateStatus(`🎨 ${mode === 'positive' ? 'Include' : 'Exclude'} annotation mode active`);
     }
 
     onAnnotationAdded(e) {
@@ -1008,7 +1008,7 @@ for i, (box, score) in enumerate(zip(results['boxes'], results['scores'])):
         
         if (positiveExamples.length > 0) {
             html += '<div class="example-group positive-examples">';
-            html += '<h4>✅ Positive Examples</h4>';
+            html += '<h4>✅ Include Examples</h4>';
             html += '<div class="example-grid">';
             positiveExamples.forEach(example => {
                 html += `
@@ -1025,7 +1025,7 @@ for i, (box, score) in enumerate(zip(results['boxes'], results['scores'])):
 
         if (negativeExamples.length > 0) {
             html += '<div class="example-group negative-examples">';
-            html += '<h4>❌ Negative Examples</h4>';
+            html += '<h4>❌ Exclude Examples</h4>';
             html += '<div class="example-grid">';
             negativeExamples.forEach(example => {
                 html += `

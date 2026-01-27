@@ -1,6 +1,21 @@
 # Rapid Detector
 
-Minimalist object detection using SAM3. Create custom detectors with visual examples - no training required.
+Minimalist zero-shot object detection using SAM3. Create custom detectors with visual examples - no training required.
+
+## Great for
+
+- Rapid prototyping for computer vision projects
+- Custom object detection without ML expertise
+- Iterative refinement after deployment - add examples to improve accuracy instantly
+- One-off detection tasks
+
+## vs Roboflow/YOLO
+
+- No separate annotation workflow - prompt and detect in one interface
+- Zero training time - results in seconds
+- Local/private data - nothing leaves your machine
+- Open source
+- Tradeoff: Requires GPU
 
 ## Quick Start
 

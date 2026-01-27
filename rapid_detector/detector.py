@@ -180,6 +180,7 @@ class RapidDetector:
     def process_predictions(self, image_wh, predictions, confidence_threshold=0.5):
         out_probs = predictions["pred_logits"].sigmoid()
         #presence_score = predictions["presence_logit_dec"].sigmoid().unsqueeze(1)
+        # we ignore the presence score for now. And, maybe, forever.
         presence_score = 1
         out_probs = (out_probs * presence_score).squeeze(-1)
 

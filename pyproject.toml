@@ -3,7 +3,7 @@ name = "rapid-detector"
 version = "0.1.0"
 description = "Fast object detection configuration system using foundation models with visual examples"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.8"
 dependencies = [
     "torch",
     "torchvision", 

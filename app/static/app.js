@@ -199,8 +199,7 @@ class DetectorApp {
 
         // Auto-run detection if we have a detector and class name
         if (this.currentClassName && this.detectorId) {
-            this.updateStatus(`🔄 Auto-detecting on new image...`, 'info');
-            setTimeout(() => this.runDetection(), 500); // Small delay to let image load
+            setTimeout(() => this.runDetection(), 500);
         }
     }
 
@@ -261,12 +260,6 @@ class DetectorApp {
         
         // Update examples display
         this.updateExamplesDisplay();
-        
-        // Auto-run detection if we have a detector and selected image
-        if (selectedDetectorId && this.selectedImage) {
-            this.updateStatus(`🔄 Auto-detecting on selected detector...`, 'info');
-            setTimeout(() => this.runDetection(), 500);
-        }
     }
 
     showNewDetectorInput() {
@@ -855,7 +848,6 @@ class DetectorApp {
 
         // Auto-run detection if we have a detector
         if (this.currentClassName && this.detectorId) {
-            this.updateStatus(`🔄 Auto-detecting on saved image...`, 'info');
             setTimeout(() => this.runDetection(), 500);
         }
     }

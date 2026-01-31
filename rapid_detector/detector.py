@@ -33,7 +33,7 @@ class RapidDetector:
         # Use conditionally
         try:
             with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
-                scaled_dot_product_attention(
+                F.scaled_dot_product_attention(
                     torch.randn(1, 8, 8, 32, device="cuda", dtype=torch.bfloat16),
                     torch.randn(1, 8, 8, 32, device="cuda", dtype=torch.bfloat16),
                     torch.randn(1, 8, 8, 32, device="cuda", dtype=torch.bfloat16))

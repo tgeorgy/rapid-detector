@@ -32,14 +32,15 @@ class RapidDetector:
 
         # Use conditionally
         try:
-            with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
-                F.scaled_dot_product_attention(
-                    torch.randn(1, 8, 8, 32, device="cuda", dtype=torch.bfloat16),
-                    torch.randn(1, 8, 8, 32, device="cuda", dtype=torch.bfloat16),
-                    torch.randn(1, 8, 8, 32, device="cuda", dtype=torch.bfloat16))
+            with torch.amp.autocast('cuda', torch.float16):
+                with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
+                    F.scaled_dot_product_attention(
+                        torch.randn(1, 8, 8, 32, device="cuda", dtype=torch.bfloat16),
+                        torch.randn(1, 8, 8, 32, device="cuda", dtype=torch.bfloat16),
+                        torch.randn(1, 8, 8, 32, device="cuda", dtype=torch.bfloat16))
             self.attn_context = torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION)
         except RuntimeError:
-            self.attn_context = torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.EFFICIENT_ATTENTION)
+            self.attn_context = nullcontext()
 
     def _update_prompt_state(self, name):
         config = self.configs[name]

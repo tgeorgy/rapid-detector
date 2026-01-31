@@ -15,7 +15,8 @@ dependencies = [
     "pydantic",
     "aiofiles",
     "jinja2",
-    "sam3[dev,notebooks] @ git+https://github.com/facebookresearch/sam3.git"
+    "sam3[dev,notebooks] @ git+https://github.com/facebookresearch/sam3.git",
+    "flash-attn"
 ]
 
 [project.scripts]

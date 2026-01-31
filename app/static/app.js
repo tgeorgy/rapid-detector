@@ -9,7 +9,7 @@ class DetectorApp {
         this.imageIdMap = new Map(); // Map image index -> image_id for uploaded images
         this.currentClassName = '';  // Human-readable class name
         this.detectorId = '';        // Normalized detector ID for API calls
-        this.apiBaseUrl = 'http://localhost:8000';
+        this.apiBaseUrl = '';
         this.examplesUpdateTimer = null;
         this.currentAnnotationMode = 'positive'; // Default to positive
         this.pendingAnnotations = []; // Store annotations before submission

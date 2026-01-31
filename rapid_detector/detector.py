@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from typing import List, Dict, Any, Tuple, Optional
 
 import numpy as np
@@ -28,6 +29,17 @@ class RapidDetector:
         self.configs = {}
         if auto_load:
             self.load_all_configs()
+
+        # Use conditionally
+        try:
+            with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
+                scaled_dot_product_attention(
+                    torch.randn(1, 8, 8, 32, device="cuda", dtype=torch.bfloat16),
+                    torch.randn(1, 8, 8, 32, device="cuda", dtype=torch.bfloat16),
+                    torch.randn(1, 8, 8, 32, device="cuda", dtype=torch.bfloat16))
+            self.attn_context = torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION)
+        except RuntimeError:
+            self.attn_context = torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.EFFICIENT_ATTENTION)
 
     def _update_prompt_state(self, name):
         config = self.configs[name]
@@ -212,7 +224,7 @@ class RapidDetector:
     @torch.inference_mode
     def _run_model(self, image, prompt, prompt_mask):
         with torch.amp.autocast('cuda', torch.bfloat16):
-            with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
+            with self.attn_context:
                 image_data = self.processor.set_image(image)
 
             backbone_out, encoder_out, _ = self.model._run_encoder(

@@ -38,9 +38,9 @@ class RapidDetector:
                         torch.randn(1, 8, 8, 32, device="cuda", dtype=torch.bfloat16),
                         torch.randn(1, 8, 8, 32, device="cuda", dtype=torch.bfloat16),
                         torch.randn(1, 8, 8, 32, device="cuda", dtype=torch.bfloat16))
-            self.attn_context = torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION)
+            self.attn_context = lambda: torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION)
         except RuntimeError:
-            self.attn_context = nullcontext()
+            self.attn_context = lambda: nullcontext()
 
     def _update_prompt_state(self, name):
         config = self.configs[name]
@@ -225,7 +225,7 @@ class RapidDetector:
     @torch.inference_mode
     def _run_model(self, image, prompt, prompt_mask):
         with torch.amp.autocast('cuda', torch.bfloat16):
-            with self.attn_context:
+            with self.attn_context():
                 image_data = self.processor.set_image(image)
 
             backbone_out, encoder_out, _ = self.model._run_encoder(

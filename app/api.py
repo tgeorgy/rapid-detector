@@ -173,6 +173,8 @@ async def detect_objects(
         
         return JSONResponse(content=response_data)
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Inference failed: {str(e)}")
 
 @app.get("/detect/{detector_name}/info")

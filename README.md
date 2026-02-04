@@ -32,6 +32,21 @@ python start_services.py
 
 Open http://localhost:8000
 
+## Docker
+
+Requires [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
+
+```bash
+docker build -t rapid-detector .
+docker run --gpus all --user $(id -u):$(id -g) -p 8000:8000 \
+  -v ~/.cache/huggingface:/cache/.huggingface \
+  -v ~/.cache/rapid_detector:/cache/rapid_detector \
+  -e HF_HOME=/cache/.huggingface \
+  rapid-detector
+```
+
+Uses your existing HF token and caches models/configs to `~/.cache/`.
+
 ## Step-by-Step Labeling
 
 1. **Upload images** - drag & drop your reference photos

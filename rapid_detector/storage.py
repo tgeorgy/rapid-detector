@@ -1,6 +1,7 @@
 import json
 import uuid
 import hashlib
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict
@@ -10,7 +11,7 @@ import torch
 class DetectorStorage:
     def __init__(self, data_dir: Optional[str] = None):
         if data_dir is None:
-            data_dir = Path.home() / ".cache" / "rapid_detector"
+            data_dir = os.environ.get("RAPID_DETECTOR_CACHE", Path.home() / ".cache" / "rapid_detector")
         self.data_dir = Path(data_dir)
         self.images_dir = self.data_dir / "images"
         self.prompts_dir = self.data_dir / "prompts"  # New directory for PyTorch prompt states

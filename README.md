@@ -4,6 +4,9 @@ Minimalist zero-shot object detection using SAM3. Create custom detectors with v
 
 ⚠️ **Early alpha** - interfaces may change. [Feedback welcome!](https://github.com/tgeorgy/rapid-detector/issues)
 
+## Demo
+[![Rapid Detector Demo](https://img.youtube.com/vi/SrS0oKARM4g/maxresdefault.jpg)](https://www.youtube.com/watch?v=SrS0oKARM4g)
+
 ## Great for
 
 - Rapid prototyping for computer vision projects

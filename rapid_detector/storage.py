@@ -14,9 +14,11 @@ class DetectorStorage:
             data_dir = os.environ.get("RAPID_DETECTOR_CACHE", Path.home() / ".cache" / "rapid_detector")
         self.data_dir = Path(data_dir)
         self.images_dir = self.data_dir / "images"
+        self.thumbnails_dir = self.data_dir / "thumbnails"
         self.prompts_dir = self.data_dir / "prompts"  # New directory for PyTorch prompt states
         self.data_dir.mkdir(exist_ok=True, parents=True)
         self.images_dir.mkdir(exist_ok=True, parents=True)
+        self.thumbnails_dir.mkdir(exist_ok=True, parents=True)
         self.prompts_dir.mkdir(exist_ok=True, parents=True)
     
     def create_empty_config(self, class_name: str) -> str:
@@ -93,15 +95,25 @@ class DetectorStorage:
         image_bytes = image.tobytes()
         image_hash = hashlib.sha256(f"{image.size}_{image.mode}".encode() + image_bytes).hexdigest()[:16]
         image_path = self.images_dir / f"{image_hash}.png"
-        
+        thumb_path = self.thumbnails_dir / f"{image_hash}.png"
+
         if not image_path.exists():
             image.save(image_path, 'PNG')
-        
+
+        if not thumb_path.exists():
+            thumb = image.copy()
+            thumb.thumbnail((160, 160))
+            thumb.save(thumb_path, 'PNG', optimize=True)
+
         return image_hash
-    
+
     def get_image(self, image_id: str) -> Image.Image:
         image_path = self.images_dir / f"{image_id}.png"
         return Image.open(image_path)
+
+    def get_thumbnail_path(self, image_id: str) -> Optional[Path]:
+        thumb_path = self.thumbnails_dir / f"{image_id}.png"
+        return thumb_path if thumb_path.exists() else None
     
     def list_configs(self) -> List[str]:
         config_files = list(self.data_dir.glob("*.json"))

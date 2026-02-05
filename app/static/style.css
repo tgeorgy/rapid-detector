@@ -112,6 +112,9 @@ header p {
     grid-template-columns: repeat(2, 1fr);
     gap: 0.5rem;
     margin-top: 1rem;
+    max-height: 308px;
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .gallery-image {

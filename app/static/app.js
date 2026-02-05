@@ -162,8 +162,9 @@ class DetectorApp {
             img.src = URL.createObjectURL(file);
             img.alt = `Image ${index + 1}`;
             img.className = 'gallery-image';
+            img.loading = 'lazy';
             img.addEventListener('click', () => this.selectImage(index));
-            
+
             gallery.appendChild(img);
         });
     }
@@ -805,11 +806,12 @@ class DetectorApp {
         
         this.savedImageData.forEach((imgData, index) => {
             const img = document.createElement('img');
-            img.src = imgData.url; // Use static file URL directly
+            img.src = imgData.thumbnail_url || imgData.url; // Use thumbnail for gallery
             img.alt = `Saved Image ${index + 1}`;
             img.className = 'gallery-image';
+            img.loading = 'lazy';
             img.addEventListener('click', () => this.selectSavedImage(index));
-            
+
             gallery.appendChild(img);
         });
     }

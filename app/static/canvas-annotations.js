@@ -52,11 +52,8 @@ class CanvasAnnotations {
                 reject(error);
             };
 
-            if (imageFile instanceof File) {
-                const reader = new FileReader();
-                reader.onload = (e) => img.src = e.target.result;
-                reader.onerror = (error) => reject(error);
-                reader.readAsDataURL(imageFile);
+            if (imageFile instanceof File || imageFile instanceof Blob) {
+                img.src = URL.createObjectURL(imageFile);
             } else {
                 img.src = imageFile; // URL string
             }

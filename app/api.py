@@ -28,12 +28,15 @@ app.add_middleware(
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-# Mount stored images directory
+# Mount stored images and thumbnails directories
 from pathlib import Path
-# Get the images directory from detector storage
-detector_storage_dir = Path.home() / ".cache" / "rapid_detector" / "images"
-if detector_storage_dir.exists():
-    app.mount("/images", StaticFiles(directory=str(detector_storage_dir)), name="images")
+cache_dir = Path(os.environ.get("RAPID_DETECTOR_CACHE", Path.home() / ".cache" / "rapid_detector"))
+images_dir = cache_dir / "images"
+thumbnails_dir = cache_dir / "thumbnails"
+images_dir.mkdir(parents=True, exist_ok=True)
+thumbnails_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/thumbnails", StaticFiles(directory=str(thumbnails_dir)), name="thumbnails")
+app.mount("/images", StaticFiles(directory=str(images_dir)), name="images")
 
 # Serve the main page at root
 from fastapi.responses import FileResponse
@@ -479,7 +482,8 @@ async def get_uploaded_images(detector_name: str):
                 "id": img_info['id'],
                 "filename": img_info.get('filename', f"image_{img_info['id']}.png"),
                 "size": img_info.get('size', [0, 0]),
-                "url": f"/images/{img_info['id']}.png"  # Static file URL
+                "url": f"/images/{img_info['id']}.png",
+                "thumbnail_url": f"/thumbnails/{img_info['id']}.png"
             })
 
         except Exception as e:

@@ -896,7 +896,7 @@ class DetectorApp {
         this.apiCode = `import requests
 
 detector_id = "${this.detectorId}"
-api_url = f"http://localhost:8000/detect/{detector_id}"
+api_url = f"${window.location.origin}/detect/{detector_id}"
 
 with open("test_image.jpg", "rb") as f:
     response = requests.post(api_url, files={"image": f})
